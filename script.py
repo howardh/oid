@@ -15,6 +15,10 @@ import torch.nn as nn
 import torch.utils.data
 import torchvision
 
+import data
+from data.classdescriptions import ClassDescriptions
+from data.labelshierarchy import LabelsHierarchy
+from data.bbox import BoundingBoxes
 
 def get_food_img_ids_from_human_labels():
     food_img_ids = []
@@ -121,7 +125,7 @@ def load_oid_data(food_img_rows, food_img_urls, input_dir='images', output_dir='
     return data
 
 class OpenImageDataset(torch.utils.data.Dataset):
-    def __init__(self, input_dir='.', output_dir='OpenImageDataset'):
+    def __init__(self, input_dir='.', output_dir='OpenImageDataset', label_depth=-1):
         self.input_dir = input_dir
         self.output_dir = output_dir
         self.original_dir = os.path.join(output_dir, 'original')
@@ -135,11 +139,12 @@ class OpenImageDataset(torch.utils.data.Dataset):
 
         log.info('Loading class description mappings')
         self.class_to_description, self.description_to_class = self.get_class_descriptions()
-        tree = self.get_label_tree()
+        self.class_tree = self.get_label_tree()
 
         food_class = self.description_to_class['Food']
-        foods = tree['/m/0bl9f'][food_class]
-        self.food_keys = self.extract_label_tree_keys(foods)
+        self.foods_class_tree = self.class_tree['/m/0bl9f'][food_class]
+        self.food_keys = self.extract_label_tree_keys(self.foods_class_tree)
+        #self.food_keys = self.extract_label_tree_leaf_keys(self.foods_class_tree)
 
         log.info('Loading dataset metadata')
         #food_img_ids = get_food_img_ids_from_human_labels()
@@ -282,6 +287,57 @@ class OpenImageDataset(torch.utils.data.Dataset):
             print(self.dataset[idx])
             return None
 
+    def find_class_subtree(self, class_name):
+        tree = self.foods_class_tree
+        def find(tree):
+            if tree is None:
+                return None
+            for k,v in tree.items():
+                if k==class_name:
+                    return v
+                else:
+                    temp = find(v)
+                    if temp is not None:
+                        return temp
+            return None
+        tree = find(tree)
+        for k,v in tree.items():
+            print(self.get_class_description(k),v)
+
+    def has_parent(self, val, parent):
+        """ Check if `val` has `parent` as a direct ancestor"""
+        def search(tree):
+            if tree is None:
+                return False
+            for k,v in tree.items():
+                if k == parent:
+                    return val in v
+                if search(v):
+                    return True
+            return False
+        return search(self.class_tree)
+
+    def has_ancestor(self, val, parent):
+        """ Check if `val` has `parent` as an ancestor """
+        def find_subtree(tree, root_key):
+            """ Return the subtree rooted on the key `root_key`. """
+            if tree is None:
+                return None
+            if root_key in tree:
+                return tree[root_key]
+            for k,v in tree.items():
+                output = find_subtree(v, root_key)
+                if output is not None:
+                    return output
+            return None
+        p = find_subtree(self.class_tree, parent)
+        return find_subtree(p, val) is not None
+
+    def filter_by_parent(self, dataset, parent):
+        """ Return a copy of the dataset with only items with `parent` as a parent label.
+        """
+        return [d for d in tqdm(dataset,desc='Filtering') if self.has_parent(d['label'], parent)]
+
     def get_class_description(self, class_id):
         if type(class_id) is torch.Tensor:
             class_id = class_id.item()
@@ -363,6 +419,15 @@ class OpenImageDataset(torch.utils.data.Dataset):
             keys.append(k)
             if type(v) is dict:
                 keys += self.extract_label_tree_keys(v)
+        return sorted(keys)
+
+    def extract_label_tree_leaf_keys(self, node):
+        keys = []
+        for k,v in node.items():
+            if type(v) is dict:
+                keys += self.extract_label_tree_keys(v)
+            else:
+                keys.append(k)
         return sorted(keys)
 
 class Yolo(nn.Module):
@@ -499,23 +564,24 @@ def collate(batch):
         return (torch.Tensor([]), torch.Tensor([]))
     return d_c(batch)
 
-if __name__ == "__main__":
+def train():
     device = torch.device('cuda')
     #device = torch.device('cpu')
 
     # Init neural net
     net = YoloClassifier()
-    #net.load_state_dict(torch.load('weights/classifier-1.pt'))
+    #net.load_state_dict(torch.load('weights/classifier-leaf-7.pt'))
     net = net.to(device)
 
     # Data
-    data = OpenImageDataset(input_dir='/NOBACKUP/hhuang63/oid/', output_dir='/NOBACKUP/hhuang63/oid/OpenImageDataset')
+    data = OpenImageDataset(input_dir='/NOBACKUP/hhuang63/oid/', output_dir='/NOBACKUP/hhuang63/oid/OpenImageDatasetLeafs')
+    data.find_class_subtree('/m/052lwg6') # baked goods
     train_test_split = 0.9
     train, test = torch.utils.data.random_split(
             data,[int(train_test_split*len(data)), len(data)-int(train_test_split*len(data))])
     dataloader = torch.utils.data.DataLoader(data, batch_size=50, num_workers=5, collate_fn=collate)
-    train_dataloader = torch.utils.data.DataLoader(train, batch_size=70, num_workers=10, collate_fn=collate, shuffle=True)
-    test_dataloader = torch.utils.data.DataLoader(test, batch_size=70, num_workers=10, collate_fn=collate)
+    train_dataloader = torch.utils.data.DataLoader(train, batch_size=50, num_workers=10, collate_fn=collate, shuffle=True)
+    test_dataloader = torch.utils.data.DataLoader(test, batch_size=50, num_workers=10, collate_fn=collate)
 
     # Training loop
     opt = torch.optim.SGD(net.parameters(), lr=1e-4, momentum=0.9)
@@ -523,7 +589,7 @@ if __name__ == "__main__":
 
     for iteration in range(1000):
         print('Iteration %d\t (Saving...)' % iteration)
-        torch.save(net.state_dict(), 'weights/classifier-%d.pt' % iteration)
+        torch.save(net.state_dict(), 'weights/classifier-leaf-%d.pt' % iteration)
 
         total_test_loss = 0
         net.eval()
@@ -550,9 +616,92 @@ if __name__ == "__main__":
             total_loss += loss.item()
         print('Training Loss: %f' % (total_loss/len(train_dataloader)))
 
+def train_hierarchical():
+    device = torch.device('cuda')
+
+    # Init neural net
+    net = YoloClassifier()
+    net = net.to(device)
+
+    # Data
+    data = OpenImageDataset(input_dir='/NOBACKUP/hhuang63/oid/', output_dir='/NOBACKUP/hhuang63/oid/OpenImageDataset')
+    data.dataset = data.filter_by_parent(data.dataset, data.description_to_class['Baked goods'])
+    train_test_split = 0.9
+    train, test = torch.utils.data.random_split(
+            data,[int(train_test_split*len(data)), len(data)-int(train_test_split*len(data))])
+    dataloader = torch.utils.data.DataLoader(data, batch_size=50, num_workers=5, collate_fn=collate)
+    train_dataloader = torch.utils.data.DataLoader(train, batch_size=50, num_workers=10, collate_fn=collate, shuffle=True)
+    test_dataloader = torch.utils.data.DataLoader(test, batch_size=50, num_workers=10, collate_fn=collate)
+
+    # Training loop
+    opt = torch.optim.SGD(net.parameters(), lr=1e-4, momentum=0.9)
+    criterion = nn.CrossEntropyLoss()
+
+    for iteration in range(1000):
+        print('Iteration %d\t (Saving...)' % iteration)
+        torch.save(net.state_dict(), 'weights/classifier-baked-%d.pt' % iteration)
+
+        total_test_loss = 0
+        net.eval()
+        for y,x in tqdm(test_dataloader, desc='Testing'):
+            x = x.to(device)
+            y = y.to(device)
+
+            y_hat = net(x)
+            loss = criterion(y_hat, y)
+            total_test_loss += loss.item()
+        print('Testing Loss: %f' % (total_test_loss/len(test_dataloader)))
+
+        total_loss = 0
+        net.train()
+        for y,x in tqdm(train_dataloader, desc='Training'):
+            x = x.to(device)
+            y = y.to(device)
+
+            opt.zero_grad()
+            y_hat = net(x)
+            loss = criterion(y_hat, y)
+            loss.backward()
+            opt.step()
+            total_loss += loss.item()
+        print('Training Loss: %f' % (total_loss/len(train_dataloader)))
+
+def show_net_output():
     def sort_predictions(pred):
         """
         Given a size (1,81) tensor consisting of log softmax outputs, return a new array sorted by the log softmax probability.
         Output consists of the original log softmax outputs and the original index.
         """
         return sorted([(i,p) for i,p in enumerate(pred.detach().cpu().numpy()[0,:])], key=lambda x: x[1], reverse=True)
+
+    device = torch.device('cuda')
+
+    # Init neural net
+    net = YoloClassifier()
+    net.load_state_dict(torch.load('weights/classifier-baked-1.pt'))
+    net = net.to(device)
+
+    for j in range(5):
+        y = torch.nn.functional.softmax(net(test[j][1].view(1,3,224,224).to(device)))
+        sorted_y = sort_predictions(y)
+        print("Actual class: %s" % data.get_class_description(test[j][0]))
+        for i in range(5):
+            pred = data.get_class_description(sorted_y[i][0])
+            percent = sorted_y[i][1]
+            print("\t%s - %f" % (pred, percent))
+
+if __name__ == "__main__":
+    input_dir = '/NOBACKUP/hhuang63/oid/'
+    output_dir='/NOBACKUP/hhuang63/oid/OpenImageDataset'
+    #train_hierarchical()
+    #data = OpenImageDataset(input_dir=input_dir, output_dir=output_dir)
+    #data.dataset = data.filter_by_parent(data.dataset, data.description_to_class['Fruit'])
+
+    cd = ClassDescriptions(input_dir=input_dir,output_dir=output_dir)
+    cd.load()
+
+    lh = LabelsHierarchy(input_dir=input_dir,output_dir=output_dir)
+    lh.load()
+
+    bb = BoundingBoxes(input_dir=input_dir,output_dir=output_dir)
+    bb.load()
