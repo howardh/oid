@@ -50,6 +50,7 @@ def test_load(tmpdir):
     f = input_dir.join('class-descriptions.csv')
     f.write(class_description_csv_40)
     cd = ClassDescriptions(input_dir=input_dir.strpath, output_dir=output_dir.strpath)
+    cd.load()
     # First row
     assert cd['/m/0100nhbf'] == 'Sprenger\'s tulip'
     assert cd['Sprenger\'s tulip'] == '/m/0100nhbf'
@@ -57,4 +58,4 @@ def test_load(tmpdir):
     assert cd['/m/011_g9'] == 'Wind instrument'
     assert cd['Wind instrument'] == '/m/011_g9'
     # Num rows
-    assert len(cd) == 40, 'Incorrect number of rows loaded'
+    assert len(cd) == 41, 'Incorrect number of rows loaded'

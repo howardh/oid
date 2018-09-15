@@ -19,6 +19,24 @@ class LabelTree():
             for k in subtree:
                 yield k
 
+    def get_map_to_level(self, level=1, ignore_partial_paths=False):
+        """ Return a dictionary mapping children to their ancestor at level
+        `level`. Level 0 refers to the root node. """
+        if level == 0:
+            return dict([(k, self.key) for k in self])
+        else:
+            # Loop through children and assign them all ot their direct parent
+            if len(self.subcategories) == 0:
+                if ignore_partial_paths:
+                    return {}
+                else:
+                    return {self.key: self.key}
+            else:
+                output = dict()
+                for subtree in self.subcategories:
+                    output.update(subtree.get_map_to_level(level-1))
+                return output
+
 class LabelsHierarchy(object):
     def __init__(self, input_dir='.',
             file_name='bbox_labels_600_hierarchy.json', output_dir='.'):
@@ -26,7 +44,6 @@ class LabelsHierarchy(object):
         self.file_name = file_name
 
         self.tree = None
-        self.subtrees = None
 
     def load(self, file_name=None):
         """

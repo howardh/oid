@@ -13,6 +13,7 @@ class ClassDescriptions(object):
         with open(file_name) as f:
             reader = csv.reader(f)
             self.class_to_description = dict(reader)
+            self.class_to_description['/m/0bl9f'] = 'Entity'
             self.description_to_class = dict([v,k] for k,v in self.class_to_description.items())
 
     def get_class_id(self, desc):
