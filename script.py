@@ -76,6 +76,7 @@ class OpenImageDataset(torch.utils.data.Dataset):
             ymin = float(row[6])
             ymax = float(row[7])
             # output file name
+            original_file_name = os.path.join(self.original_dir, img_id)
             resized_file_name = '%s-(%.2f-%.2f-%.2f-%.2f)' % (img_id, xmin,xmax,ymin,ymax)
             resized_file_name = os.path.join(self.resized_dir, resized_file_name)
             # Save data
@@ -88,7 +89,7 @@ class OpenImageDataset(torch.utils.data.Dataset):
                     'ymin': ymin,
                     'ymax': ymax
                 },
-                'original_file_name': img_id,
+                'original_file_name': original_file_name,
                 'resized_file_name': resized_file_name
             })
         self.dataset = dataset
