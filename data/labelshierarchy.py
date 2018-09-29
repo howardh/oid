@@ -21,8 +21,12 @@ class LabelTree():
 
     def get_map_to_level(self, level=1, ignore_partial_paths=False):
         """ Return a dictionary mapping children to their ancestor at level
-        `level`. Level 0 refers to the root node. """
-        if level == 0:
+        `level`. Level 0 refers to the root node. If level is `None`, then all
+        labels map back to themselves. """
+        if level is None:
+            # No mapping
+            return dict([(k,k) for k in self])
+        elif level == 0:
             return dict([(k, self.key) for k in self])
         else:
             # Loop through children and assign them all ot their direct parent

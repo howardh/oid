@@ -7,6 +7,8 @@ import urllib
 import urllib.request
 import PIL
 from PIL import Image
+import itertools
+import numpy as np
 
 import logging
 
@@ -30,6 +32,8 @@ class OpenImageDataset(torch.utils.data.Dataset):
         self.original_dir = os.path.join(output_dir, 'original')
         self.resized_dir = os.path.join(output_dir, 'resized')
 
+        self.resized_images = {}
+
         self.train = train
 
         log.info('Creating OpenImageDataset directories')
@@ -41,17 +45,23 @@ class OpenImageDataset(torch.utils.data.Dataset):
         log.info('Loading class description mappings')
         class_descriptions = ClassDescriptions(input_dir=input_dir,output_dir=output_dir)
         class_descriptions.load()
+
         log.info('Loading labels tree')
         labels_hierarchy = LabelsHierarchy(input_dir=input_dir,output_dir=output_dir)
         labels_hierarchy.load()
+        if label_depth == -1:
+            label_mapping = labels_hierarchy.tree.get_map_to_level(None)
+        else:
+            label_mapping = labels_hierarchy.tree.get_map_to_level(label_depth)
+
         log.info('Loading bounding boxes')
         if self.train:
             bounding_boxes = BoundingBoxes(input_dir=input_dir,output_dir=output_dir)
         else:
             bounding_boxes = BoundingBoxes(input_dir=input_dir,output_dir=output_dir,file_name='validation-annotations-bbox.csv')
         bounding_boxes.load()
-        log.info('Loading image urls')
 
+        log.info('Loading image urls')
         image_urls = ImageUrls(input_dir=input_dir,output_dir=output_dir)
         image_urls.load()
 
@@ -69,6 +79,10 @@ class OpenImageDataset(torch.utils.data.Dataset):
             img_id = row[0]
             # label
             label = row[2]
+            if label in label_mapping:
+                label = label_mapping[label]
+            else:
+                continue # Skip if there's no label mapping available. e.g., if partial paths are ignored when creating the mapping, and some labels are left out.
             labels.add(label)
             # bounding ox
             xmin = float(row[4])
@@ -104,11 +118,16 @@ class OpenImageDataset(torch.utils.data.Dataset):
         else:
             return self.get_testing_data(idx)
 
-    def train(self):
-        self.train = True
+    def merge_labels(self, dataset):
+        """ Given another OpenImageDataset, merge the labels from both so that both datasets have the same labels and label ordering. """
+        labels = self.labels_list + dataset.labels_list
+        labels = list(set(labels))
+        labels = sorted(labels)
+        self.labels_list = labels
+        dataset.labels_list = labels
 
-    def test(self):
-        self.train = False
+    def get_num_labels(self):
+        return len(self.labels_list)
 
     def get_testing_data(self, idx):
         try:
@@ -206,6 +225,7 @@ class OpenImageDataset(torch.utils.data.Dataset):
                 img = img.repeat(3,1,1)
             if img.size()[0] == 4:
                 print('Alpha channel found, but not processed: %d' % idx)
+
             return label, img
         except Exception as e:
             print(e)
@@ -223,52 +243,58 @@ class OpenImageDataset(torch.utils.data.Dataset):
             #transform = torchvision.transforms.ToTensor()
             transform = torchvision.transforms.Compose([
                     torchvision.transforms.ColorJitter(),
-                    #torchvision.transforms.RandomCrop(),
                     torchvision.transforms.RandomResizedCrop(224),
                     torchvision.transforms.RandomHorizontalFlip(),
                     torchvision.transforms.RandomRotation(5),
                     torchvision.transforms.ToTensor()
             ])
-            # Check if original image is saved
-            img = self.get_original_image(original_file_name, url)
+            if os.path.isfile(resized_file_name):
+                try:
+                    img = Image.open(resized_file_name).convert('RGB')
+                except OSError:
+                    log.warning('Error loading file %s. Rebuilding.' % resized_file_name)
+                    os.remove(resized_file_name)
+            if not os.path.isfile(resized_file_name):
+                # Check if original image is saved
+                img = self.get_original_image(original_file_name, url)
 
-            # Get object bounding box
-            xmin = data['bounding_box']['xmin']
-            xmax = data['bounding_box']['xmax']
-            ymin = data['bounding_box']['ymin']
-            ymax = data['bounding_box']['ymax']
-            # Cropping window
-            width = img.size[0] # TODO: Is this right? I just made a guess.
-            height = img.size[1]
-            min_size = 224
-            if (xmax-xmin)*width < min_size:
-                diff = (min_size-(xmax-xmin)*width)/width
-                xmin -= diff/2
-                xmax += diff/2
-            if (ymax-ymin)*height < min_size:
-                diff = (min_size-(ymax-ymin)*height)/height
-                ymin -= diff/2
-                ymax += diff/2
-            # Ensure we stay in the boundaries
-            box_left   = width*xmin
-            box_right  = width*xmax
-            box_top    = height*ymin
-            box_bottom = height*ymax
-            if box_left < 0:
-                box_right -= box_left
-                box_left -= box_left
-            elif box_right > img.size[0]:
-                box_left += img.size[0]-box_right
-                box_right += img.size[0]-box_right
-            if box_top < 0:
-                box_bottom -= box_top
-                box_top -= box_top
-            elif box_bottom > img.size[1]:
-                box_top += img.size[1]-box_bottom
-                box_bottom += img.size[1]-box_bottom
-            # crop
-            img = img.crop([box_left, box_top, box_right, box_bottom])
-            img.save(resized_file_name, format='jpeg')
+                # Get object bounding box
+                xmin = data['bounding_box']['xmin']
+                xmax = data['bounding_box']['xmax']
+                ymin = data['bounding_box']['ymin']
+                ymax = data['bounding_box']['ymax']
+                # Cropping window
+                width = img.size[0] # TODO: Is this right? I just made a guess.
+                height = img.size[1]
+                min_size = 224
+                if (xmax-xmin)*width < min_size:
+                    diff = (min_size-(xmax-xmin)*width)/width
+                    xmin -= diff/2
+                    xmax += diff/2
+                if (ymax-ymin)*height < min_size:
+                    diff = (min_size-(ymax-ymin)*height)/height
+                    ymin -= diff/2
+                    ymax += diff/2
+                # Ensure we stay in the boundaries
+                box_left   = width*xmin
+                box_right  = width*xmax
+                box_top    = height*ymin
+                box_bottom = height*ymax
+                if box_left < 0:
+                    box_right -= box_left
+                    box_left -= box_left
+                elif box_right > img.size[0]:
+                    box_left += img.size[0]-box_right
+                    box_right += img.size[0]-box_right
+                if box_top < 0:
+                    box_bottom -= box_top
+                    box_top -= box_top
+                elif box_bottom > img.size[1]:
+                    box_top += img.size[1]-box_bottom
+                    box_bottom += img.size[1]-box_bottom
+                # crop
+                img = img.crop([box_left, box_top, box_right, box_bottom])
+                img.save(resized_file_name, format='jpeg')
             # Remove channel if alpha
             if img.mode in ('RGBA', 'LA') or (img.mode == 'P' and 'transparency' in img.info):
                 print('Found transparency. Processing alpha channels.')
@@ -301,16 +327,19 @@ class OpenImageDataset(torch.utils.data.Dataset):
             # Random occlusion (TODO?)
             return label, img
         except Exception as e:
-            print(e)
-            print(idx)
-            print(self.dataset[idx])
-            raise e
+            log.debug(e)
+            log.debug(idx)
+            log.debug(self.dataset[idx])
 
-    def get_original_image(self, original_file_name, url):
+    def get_original_image(self, original_file_name, url=None):
         if not os.path.isfile(original_file_name):
-            urllib.request.urlretrieve(url, original_file_name) 
+            if url is not None:
+                urllib.request.urlretrieve(url, original_file_name) 
+            else:
+                log.debug('File not found and no URL provided.')
+                return None
         try:
-            return Image.open(original_file_name)
+            return Image.open(original_file_name).convert('RGB')
         except OSError:
             #log.warning('Error loading file %s. Redownloading.' % original_file_name)
             #urllib.request.urlretrieve(url, original_file_name) 
@@ -318,11 +347,29 @@ class OpenImageDataset(torch.utils.data.Dataset):
             log.debug('Error loading file %s. Skipping.' % original_file_name)
             return None
 
+    def compute_mean_std(self):
+        original_file_names = set([d['original_file_name'] for d in self.dataset])
+        #images = itertools.chain.from_iterable((self.get_original_image(ofn).getdata() for ofn in original_file_names))
+        for i,ofn in enumerate(original_file_names):
+            img = self.get_original_image(ofn).convert('RGB').getdata()
+            mean = np.mean(img, axis=0)
+            std = np.std(img, axis=0)
+            print(i,mean,std)
+            if mean.size != 3:
+                break
+        for i,img in enumerate(images):
+            mean = np.mean(img, axis=0)
+            std = np.std(img, axis=0)
+            print(i,mean,std)
+            if mean.size != 3:
+                break
+
 class Yolo(nn.Module):
     def __init__(self):
         super(Yolo, self).__init__()
         # See https://github.com/pjreddie/darknet/blob/master/cfg/yolov1.cfg
         self.layer1 = nn.Sequential(
+                #nn.BatchNorm2d(3),
                 nn.Conv2d(in_channels=3, out_channels=64, kernel_size=7, stride=2, padding=7//2),
                 nn.BatchNorm2d(64),
                 nn.LeakyReLU(0.1),
@@ -429,9 +476,10 @@ class Yolo(nn.Module):
        return x
 
 class YoloClassifier(Yolo):
-    def __init__(self):
+    def __init__(self, labels=[]):
         super(YoloClassifier, self).__init__()
-        self.linear = nn.Linear(in_features=4*4*1024,out_features=81)
+        self.labels = labels
+        self.linear = nn.Linear(in_features=4*4*1024,out_features=len(labels))
         self.softmax = nn.Softmax()
 
     def forward(self, x):
@@ -456,36 +504,42 @@ def train():
     device = torch.device('cuda')
     #device = torch.device('cpu')
 
+    # Data
+    train = OpenImageDataset(input_dir='/NOBACKUP/hhuang63/oid/', output_dir='/NOBACKUP/hhuang63/oid/OpenImageDataset', train=True, label_depth=2)
+    test = OpenImageDataset(input_dir='/NOBACKUP/hhuang63/oid/', output_dir='/NOBACKUP/hhuang63/oid/OpenImageDatasetValidation', train=False, label_depth=2)
+    train.merge_labels(test)
+
+    dataloader = torch.utils.data.DataLoader(data, batch_size=50, num_workers=5, collate_fn=collate)
+    train_dataloader = torch.utils.data.DataLoader(train, batch_size=50, num_workers=20, collate_fn=collate, shuffle=True)
+    test_dataloader = torch.utils.data.DataLoader(test, batch_size=50, num_workers=10, collate_fn=collate)
+
+    # Check that the labels matchs
+    if train.labels_list != test.labels_list:
+        raise Exception('Training and test labels mismatch')
+
     # Init neural net
-    net = YoloClassifier()
+    net = YoloClassifier(labels=train.labels_list)
     #net.load_state_dict(torch.load('weights/classifier-leaf-7.pt'))
     net = net.to(device)
-
-    # Data
-    train = OpenImageDataset(input_dir='/NOBACKUP/hhuang63/oid/', output_dir='/NOBACKUP/hhuang63/oid/OpenImageDataset', train=True)
-    test = OpenImageDataset(input_dir='/NOBACKUP/hhuang63/oid/', output_dir='/NOBACKUP/hhuang63/oid/OpenImageDatasetValidation', train=False)
-    dataloader = torch.utils.data.DataLoader(data, batch_size=50, num_workers=5, collate_fn=collate)
-    train_dataloader = torch.utils.data.DataLoader(train, batch_size=50, num_workers=10, collate_fn=collate, shuffle=True)
-    test_dataloader = torch.utils.data.DataLoader(test, batch_size=50, num_workers=10, collate_fn=collate)
 
     # Training loop
     opt = torch.optim.SGD(net.parameters(), lr=1e-4, momentum=0.9)
     criterion = nn.CrossEntropyLoss()
 
     for iteration in range(1000):
-        #print('Iteration %d\t (Saving...)' % iteration)
-        #torch.save(net.state_dict(), 'weights/classifier-leaf-%d.pt' % iteration)
+        print('Iteration %d\t (Saving...)' % iteration)
+        torch.save(net.state_dict(), 'weights/classifier-leaf-%d.pt' % iteration)
 
-        #total_test_loss = 0
-        #net.eval()
-        #for y,x in tqdm(test_dataloader, desc='Testing'):
-        #    x = x.to(device)
-        #    y = y.to(device)
+        total_test_loss = 0
+        net.eval()
+        for y,x in tqdm(test_dataloader, desc='Testing'):
+            x = x.to(device)
+            y = y.to(device)
 
-        #    y_hat = net(x)
-        #    loss = criterion(y_hat, y)
-        #    total_test_loss += loss.item()
-        #print('Testing Loss: %f' % (total_test_loss/len(test_dataloader)))
+            y_hat = net(x)
+            loss = criterion(y_hat, y)
+            total_test_loss += loss.item()
+        print('Testing Loss: %f' % (total_test_loss/len(test_dataloader)))
 
         total_loss = 0
         net.train()
@@ -500,6 +554,8 @@ def train():
             opt.step()
             total_loss += loss.item()
         print('Training Loss: %f' % (total_loss/len(train_dataloader)))
+
+        print('%s & %s & %s' % (iteration, (total_loss/len(train_dataloader)), (total_test_loss/len(test_dataloader))))
 
 def train_hierarchical():
     device = torch.device('cuda')
@@ -554,7 +610,7 @@ def train_hierarchical():
 def show_net_output():
     def sort_predictions(pred):
         """
-        Given a size (1,81) tensor consisting of log softmax outputs, return a new array sorted by the log softmax probability.
+        Given a size (1,num_classes) tensor consisting of log softmax outputs, return a new array sorted by the log softmax probability.
         Output consists of the original log softmax outputs and the original index.
         """
         return sorted([(i,p) for i,p in enumerate(pred.detach().cpu().numpy()[0,:])], key=lambda x: x[1], reverse=True)
@@ -575,27 +631,49 @@ def show_net_output():
             percent = sorted_y[i][1]
             print("\t%s - %f" % (pred, percent))
 
+def predict(weights_file_name, img_file_name):
+    device = torch.device('cpu')
+
+    # Data (Load this to get the labels)
+    train = OpenImageDataset(input_dir='/NOBACKUP/hhuang63/oid/', output_dir='/NOBACKUP/hhuang63/oid/OpenImageDataset', train=True, label_depth=2)
+    test = OpenImageDataset(input_dir='/NOBACKUP/hhuang63/oid/', output_dir='/NOBACKUP/hhuang63/oid/OpenImageDatasetValidation', train=False, label_depth=2)
+    train.merge_labels(test)
+    labels = train.labels_list
+
+    net = YoloClassifier(labels=labels)
+    net.load_state_dict(torch.load(weights_file_name))
+    net = net.to(device)
+    net.eval()
+
+    # Load image
+    img = Image.open(img_file_name)
+    # Process image
+    min_dim = min(img.size)
+    max_dim = max(img.size)
+    scale = 225/min_dim
+    img.thumbnail([max_dim*scale,max_dim*scale])
+    left = img.size[0]//2-112
+    top = img.size[1]//2-112
+    img = img.crop([left,top,left+224,top+224])
+    img = img.convert('RGB')
+    transform = torchvision.transforms.ToTensor()
+    img = transform(img)
+    # Feed image to neural net
+    output = net(img.view(-1,3,224,224))
+    output = output.argmax().item()
+    # Human-readable output
+    class_descriptions = ClassDescriptions(input_dir=input_dir,output_dir=output_dir)
+    class_descriptions.load()
+    description = class_description[labels[output]]
+    # TODO: Output/return prediction
+    print(description)
+    return description
+
+
 if __name__ == "__main__":
     input_dir = '/NOBACKUP/hhuang63/oid/'
     output_dir='/NOBACKUP/hhuang63/oid/OpenImageDataset'
-    train()
+    #train()
+    #predict('weights/classifier-leaf-28.pt','875806_R.jpg')
 
-    #cd = ClassDescriptions(input_dir=input_dir,output_dir=output_dir)
-    #cd.load()
-
-    #lh = LabelsHierarchy(input_dir=input_dir,output_dir=output_dir)
-    #lh.load()
-
-    #bb = BoundingBoxes(input_dir=input_dir,output_dir=output_dir)
-    #bb.load()
-
-    #food_labels = lh[cd['Food']]
-    #label_map = food_labels.get_map_to_level()
-    #for k,v in label_map.items():
-    #    print('%s -> %s' % (cd[k], cd[v]))
-
-    #food_boxes = bb[food_labels]
-    #print(food_boxes)
-
-    #iu = ImageUrls(input_dir=input_dir,output_dir=output_dir)
-    #iu.load()
+    predict(weights_file_name, img_file_name)
