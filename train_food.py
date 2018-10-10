@@ -97,9 +97,61 @@ def train():
         print('%s & %s & %s' % (iteration, (total_loss/len(train_dataloader)), (total_test_loss/len(test_dataloader))))
 
 def predict(weights_file_name, labels_file_name, img_file_name):
+    input_dir = '/NOBACKUP/hhuang63/oid/'
+    output_dir='/NOBACKUP/hhuang63/oid/OpenImageDataset'
     device = torch.device('cpu')
 
     # Data (Load this to get the labels)
+    if not hasattr(predict,'labels'):
+        try:
+            with open('labels/labels-food.pkl','rb') as f:
+                predict.labels = dill.load(f)
+        except:
+            train = OpenImageDataset(input_dir='/NOBACKUP/hhuang63/oid/',
+                    output_dir='/NOBACKUP/hhuang63/oid/OpenImageDataset', train=True,
+                    label_depth=2, label_root='Fruit')
+            test = OpenImageDataset(input_dir='/NOBACKUP/hhuang63/oid/',
+                    output_dir='/NOBACKUP/hhuang63/oid/OpenImageDatasetValidation',
+                    train=False, label_depth=2, label_root='Fruit')
+            train.merge_labels(test)
+            predict.labels = train.labels_list
+            with open('labels/labels-food.pkl','wb') as f:
+                dill.dump(predict.labels,f)
+
+    if not hasattr(predict,'net'):
+        net = YoloClassifier(labels=predict.labels)
+        net.load_state_dict(torch.load(weights_file_name))
+        net = net.to(device)
+        net.eval()
+        predict.net = net
+
+    # Load image
+    img = Image.open(img_file_name)
+    # Process image
+    min_dim = min(img.size)
+    max_dim = max(img.size)
+    scale = 225/min_dim
+    img.thumbnail([max_dim*scale,max_dim*scale])
+    left = img.size[0]//2-112
+    top = img.size[1]//2-112
+    img = img.crop([left,top,left+224,top+224])
+    img = img.convert('RGB')
+    transform = torchvision.transforms.ToTensor()
+    img = transform(img)
+    # Feed image to neural net
+    output = predict.net(img.view(-1,3,224,224))
+    output = output.argmax().item()
+    # Human-readable output
+    class_descriptions = ClassDescriptions(input_dir=input_dir,output_dir=output_dir)
+    class_descriptions.load()
+    description = class_descriptions[predict.labels[output]]
+    # Output/return prediction
+    print(description)
+    return description
+
+def convert_to_onnx(weights_file_name, output_file_name):
+    device = torch.device('cpu')
+
     try:
         with open('labels/labels-food.pkl','rb') as f:
             labels = dill.load(f)
@@ -118,33 +170,15 @@ def predict(weights_file_name, labels_file_name, img_file_name):
     net = net.to(device)
     net.eval()
 
-    # Load image
-    img = Image.open(img_file_name)
-    # Process image
-    min_dim = min(img.size)
-    max_dim = max(img.size)
-    scale = 225/min_dim
-    img.thumbnail([max_dim*scale,max_dim*scale])
-    left = img.size[0]//2-112
-    top = img.size[1]//2-112
-    img = img.crop([left,top,left+224,top+224])
-    img = img.convert('RGB')
-    transform = torchvision.transforms.ToTensor()
-    img = transform(img)
-    # Feed image to neural net
-    output = net(img.view(-1,3,224,224))
-    output = output.argmax().item()
-    # Human-readable output
-    class_descriptions = ClassDescriptions(input_dir=input_dir,output_dir=output_dir)
-    class_descriptions.load()
-    description = class_descriptions[labels[output]]
-    # Output/return prediction
-    print(description)
-    return description
+    dummy_input = torch.rand([1,3,224,224])
+    torch.onnx.export(net, dummy_input, output_file_name, verbose=True)
 
 if __name__ == "__main__":
     input_dir = '/NOBACKUP/hhuang63/oid/'
     output_dir='/NOBACKUP/hhuang63/oid/OpenImageDataset'
     train()
-    #predict('weights/classifier-fruit-11.pt','875806_R.jpg')
+    predict('weights/classifier-fruit-11.pt','labels/labels-food.pkl','875806_R.jpg')
+    predict('weights/classifier-fruit-11.pt','labels/labels-food.pkl','875806_R.jpg')
+    predict('weights/classifier-fruit-11.pt','labels/labels-food.pkl','875806_R.jpg')
+    #convert_to_onnx('weights/classifier-fruit-11.pt','onnx/classifier-fruit.onnx')
 
