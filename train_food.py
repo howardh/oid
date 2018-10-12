@@ -120,8 +120,7 @@ def predict(weights_file_name, labels_file_name, img_file_name):
 
     if not hasattr(predict,'net'):
         net = YoloClassifier(labels=predict.labels)
-        net.load_state_dict(torch.load(weights_file_name))
-        net = net.to(device)
+        net.load_state_dict(torch.load(weights_file_name, map_location=lambda storage, location: storage))
         net.eval()
         predict.net = net
 

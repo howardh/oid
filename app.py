@@ -30,12 +30,6 @@ def create_app(test_config=None):
     except OSError:
         pass
 
-    #print('a')
-    #img = np.random.randn(1, 3, 224, 224).astype(np.float32)
-    #print('b')
-    #onnx_model = onnx.load('onnx/classifier-fruit.onnx')
-    #print('c')
-    #outputs = caffe2.python.onnx.backend.run_model(model, [img])
     train_food.predict('weights/classifier-fruit-11.pt','labels/labels-food.pkl','875806_R.jpg')
 
     # a simple page that says hello
@@ -55,3 +49,6 @@ def create_app(test_config=None):
 
     return app
 
+if __name__=='__main__':
+    app = create_app()
+    app.run()
