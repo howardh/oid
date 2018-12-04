@@ -96,17 +96,19 @@ def train():
 
         print('%s & %s & %s' % (iteration, (total_loss/len(train_dataloader)), (total_test_loss/len(test_dataloader))))
 
-def predict(weights_file_name, labels_file_name, img_file_name):
-    input_dir = '/home/ubuntu/data/'
-    output_dir= '/home/ubuntu/data/'
+temp = None
+def predict(weights_file_name, labels_file_name, img_file_name,
+        input_dir, output_dir):
+    global temp
     device = torch.device('cpu')
 
     # Data (Load this to get the labels)
     if not hasattr(predict,'labels'):
         try:
-            with open(os.path.join(output_dir,'labels','labels-food.pkl'),'rb') as f:
+            with open(labels_file_name,'rb') as f:
                 predict.labels = dill.load(f)
         except:
+            print('Unable to load labels-food.pkl. Computing...')
             train = OpenImageDataset(input_dir=input_dir,
                     output_dir=os.path.join(output_dir,'OpenImageDataset'), train=True,
                     label_depth=2, label_root='Fruit')
@@ -115,7 +117,7 @@ def predict(weights_file_name, labels_file_name, img_file_name):
                     train=False, label_depth=2, label_root='Fruit')
             train.merge_labels(test)
             predict.labels = train.labels_list
-            with open('labels/labels-food.pkl','wb') as f:
+            with open(labels_file_name,'wb') as f:
                 dill.dump(predict.labels,f)
 
     if not hasattr(predict,'net'):
@@ -137,16 +139,19 @@ def predict(weights_file_name, labels_file_name, img_file_name):
     img = img.convert('RGB')
     transform = torchvision.transforms.ToTensor()
     img = transform(img)
-    # Feed image to neural net
-    output = predict.net(img.view(-1,3,224,224))
-    output = output.argmax().item()
     # Human-readable output
     class_descriptions = ClassDescriptions(input_dir=input_dir,output_dir=output_dir)
     class_descriptions.load()
-    description = class_descriptions[predict.labels[output]]
-    # Output/return prediction
-    print(description)
-    return description
+    # Feed image to neural net
+    output = predict.net(img.view(-1,3,224,224))
+    output = output.detach().numpy()[0]
+    temp = output
+    output = sorted(zip(
+        1/(1+np.exp(-output)),
+        [class_descriptions[predict.labels[i]] for i in range(len(output))]
+    ), reverse=True)
+    print(output)
+    return output
 
 def convert_to_onnx(weights_file_name, output_file_name):
     device = torch.device('cpu')
@@ -174,11 +179,11 @@ def convert_to_onnx(weights_file_name, output_file_name):
 
 if __name__ == "__main__":
     input_dir = '/NOBACKUP/hhuang63/oid/'
-    output_dir='/NOBACKUP/hhuang63/oid/OpenImageDataset'
-    train()
-    weight_dir = os.path.join(output_dir,'weights','classifier-fruit-11.pt')
-    predict(weight_dir,'labels/labels-food.pkl','875806_R.jpg')
-    predict(weight_dir,'labels/labels-food.pkl','875806_R.jpg')
-    predict(weight_dir,'labels/labels-food.pkl','875806_R.jpg')
+    output_dir='/NOBACKUP/hhuang63/oid/'
+    #train()
+    weight_dir = os.path.join('weights','classifier-fruit-11.pt')
+    predict(weight_dir,'labels/labels-food.pkl','875806_R.jpg',input_dir=input_dir,output_dir=output_dir)
+    predict(weight_dir,'labels/labels-food.pkl','875806_R.jpg',input_dir=input_dir,output_dir=output_dir)
+    predict(weight_dir,'labels/labels-food.pkl','875806_R.jpg',input_dir=input_dir,output_dir=output_dir)
     #convert_to_onnx('weights/classifier-fruit-11.pt','onnx/classifier-fruit.onnx')
 
