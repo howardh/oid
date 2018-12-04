@@ -9,6 +9,10 @@ from flask import request
 
 import train_food
 
+weights_file = os.path.join('/home/ubuntu/data/weights','classifier-fruit-11.pt')
+labels_file = os.path.join('labels', 'labels-food.pkl')
+example_photo_file = '875806_R.jpg'
+
 def create_app(test_config=None):
     # create and configure the app
     app = Flask(__name__, instance_relative_config=True)
@@ -30,7 +34,8 @@ def create_app(test_config=None):
     except OSError:
         pass
 
-    train_food.predict('weights/classifier-fruit-11.pt','labels/labels-food.pkl','875806_R.jpg')
+    # Make on prediction in order to load the model
+    train_food.predict(weights_file, labels_file, example_photo_file)
 
     # a simple page that says hello
     @app.route('/hello')
@@ -41,14 +46,14 @@ def create_app(test_config=None):
     def predict():
         url = request.args.get('url')
         # Download URL
-        file_name = 'tempimage'
+        file_name = 'tempimage' # FIXME: Won't work with multiple concurrent requests. Use a UUID and delete afterwards?
         urllib.request.urlretrieve(url, file_name) 
         # Predict and return prediction
-        description = train_food.predict('weights/classifier-fruit-11.pt','labels/labels-food.pkl',file_name)
+        description = train_food.predict(weights_file,labels_file,file_name)
         return description
 
     return app
 
 if __name__=='__main__':
     app = create_app()
-    app.run()
+    app.run(host='0.0.0.0')

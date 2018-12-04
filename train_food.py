@@ -97,21 +97,21 @@ def train():
         print('%s & %s & %s' % (iteration, (total_loss/len(train_dataloader)), (total_test_loss/len(test_dataloader))))
 
 def predict(weights_file_name, labels_file_name, img_file_name):
-    input_dir = '/NOBACKUP/hhuang63/oid/'
-    output_dir='/NOBACKUP/hhuang63/oid/OpenImageDataset'
+    input_dir = '/home/ubuntu/data/'
+    output_dir= '/home/ubuntu/data/'
     device = torch.device('cpu')
 
     # Data (Load this to get the labels)
     if not hasattr(predict,'labels'):
         try:
-            with open('labels/labels-food.pkl','rb') as f:
+            with open(os.path.join(output_dir,'labels','labels-food.pkl'),'rb') as f:
                 predict.labels = dill.load(f)
         except:
-            train = OpenImageDataset(input_dir='/NOBACKUP/hhuang63/oid/',
-                    output_dir='/NOBACKUP/hhuang63/oid/OpenImageDataset', train=True,
+            train = OpenImageDataset(input_dir=input_dir,
+                    output_dir=os.path.join(output_dir,'OpenImageDataset'), train=True,
                     label_depth=2, label_root='Fruit')
-            test = OpenImageDataset(input_dir='/NOBACKUP/hhuang63/oid/',
-                    output_dir='/NOBACKUP/hhuang63/oid/OpenImageDatasetValidation',
+            test = OpenImageDataset(input_dir=input_dir,
+                    output_dir=os.path.join(output_dir,'OpenImageDatasetValidation'),
                     train=False, label_depth=2, label_root='Fruit')
             train.merge_labels(test)
             predict.labels = train.labels_list
@@ -176,8 +176,9 @@ if __name__ == "__main__":
     input_dir = '/NOBACKUP/hhuang63/oid/'
     output_dir='/NOBACKUP/hhuang63/oid/OpenImageDataset'
     train()
-    predict('weights/classifier-fruit-11.pt','labels/labels-food.pkl','875806_R.jpg')
-    predict('weights/classifier-fruit-11.pt','labels/labels-food.pkl','875806_R.jpg')
-    predict('weights/classifier-fruit-11.pt','labels/labels-food.pkl','875806_R.jpg')
+    weight_dir = os.path.join(output_dir,'weights','classifier-fruit-11.pt')
+    predict(weight_dir,'labels/labels-food.pkl','875806_R.jpg')
+    predict(weight_dir,'labels/labels-food.pkl','875806_R.jpg')
+    predict(weight_dir,'labels/labels-food.pkl','875806_R.jpg')
     #convert_to_onnx('weights/classifier-fruit-11.pt','onnx/classifier-fruit.onnx')
 
