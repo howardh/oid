@@ -150,6 +150,7 @@ def predict(weights_file_name, labels_file_name, img_file_name,
         1/(1+np.exp(-output)),
         [class_descriptions[predict.labels[i]] for i in range(len(output))]
     ), reverse=True)
+    output = [{'likelihood': float(l), 'class': c} for l,c in output]
     print(output)
     return output
 

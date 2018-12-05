@@ -4,6 +4,7 @@ import dill
 import urllib
 import urllib.request
 import json
+import boto3
 
 from flask import Flask
 from flask import request
@@ -23,6 +24,12 @@ else:
     weights_file = os.path.join('weights','classifier-fruit-11.pt')
     labels_file = os.path.join('labels', 'labels-food.pkl')
     example_photo_file = '875806_R.jpg'
+
+s3 = boto3.resource('s3')
+if 'LOGS_PHOTO_BUCKET_NAME' in os.environ:
+    PHOTO_BUCKET_NAME = os.environ['LOGS_PHOTO_BUCKET_NAME']
+else:
+    PHOTO_BUCKET_NAME = 'dev-hhixl-food-photos-700'
 
 def create_app(test_config=None):
     # create and configure the app
@@ -60,6 +67,20 @@ def create_app(test_config=None):
         # Download URL
         file_name = 'tempimage' # FIXME: Won't work with multiple concurrent requests. Use a UUID and delete afterwards?
         urllib.request.urlretrieve(url, file_name) 
+        # Predict and return prediction
+        output = train_food.predict(weights_file,labels_file,file_name,
+                input_dir=input_dir, output_dir=output_dir)
+        return json.dumps(output), 200
+
+    @app.route('/predict/<photo_id>')
+    def predict_aws(photo_id):
+        url = request.args.get('url')
+        # Download URL
+        file_name = 'tempimage' # FIXME: Won't work with multiple concurrent requests. Use a UUID and delete afterwards?
+        with open(file_name, 'wb') as f:
+            s3.Bucket(PHOTO_BUCKET_NAME) \
+                    .Object(str(photo_id)) \
+                    .download_fileobj(f)
         # Predict and return prediction
         output = train_food.predict(weights_file,labels_file,file_name,
                 input_dir=input_dir, output_dir=output_dir)
