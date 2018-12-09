@@ -119,11 +119,11 @@ class Yolo(nn.Module):
        return x
 
 class YoloClassifier(Yolo):
-    def __init__(self, labels=[]):
+    def __init__(self, output_size):
         super(YoloClassifier, self).__init__()
-        self.labels = labels
-        self.linear = nn.Linear(in_features=4*4*1024,out_features=len(labels))
+        self.linear = nn.Linear(in_features=4*4*1024,out_features=output_size)
         self.softmax = nn.Softmax()
+        self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
        x = self.layer1(x)
@@ -134,5 +134,6 @@ class YoloClassifier(Yolo):
        x = x.view(-1,4*4*1024)
        x = self.linear(x)
        # x = self.softmax(x)
+       x = self.sigmoid(x)
        return x
 

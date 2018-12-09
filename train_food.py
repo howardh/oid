@@ -96,6 +96,84 @@ def train():
 
         print('%s & %s & %s' % (iteration, (total_loss/len(train_dataloader)), (total_test_loss/len(test_dataloader))))
 
+def train2(input_dir, output_dir):
+    device = torch.device('cuda')
+    #device = torch.device('cpu')
+
+    # Data
+    train = OpenImageDataset(input_dir=input_dir,
+            output_dir=os.path.join(output_dir,'OpenImageDataset'), train=True,
+            label_root='Food')
+    test = OpenImageDataset(input_dir=input_dir,
+            output_dir=os.path.join(output_dir,'OpenImageDatasetValidation'),
+            train=False, label_root='Food')
+    train.merge_labels(test)
+    num_labels = len(train.labels_hierarchy)
+    with open('labels-food.pkl','wb') as f:
+        dill.dump(train.labels_hierarchy,f)
+
+    weights_file_name = 'weights/classifier-leaf-28.pt'
+    net = YoloClassifier(output_size=num_labels)
+    #state_dict = net.state_dict()
+    #trained_state_dict = torch.load(weights_file_name)
+    #trained_state_dict['linear.bias'] = state_dict['linear.bias']
+    #trained_state_dict['linear.weight'] = state_dict['linear.weight']
+    #net.load_state_dict(trained_state_dict)
+    net = net.to(device)
+    net.train()
+
+    ## Freeze all layers but the last
+    #for p in itertools.chain(net.layer1.parameters(), net.layer2.parameters(),
+    #        net.layer3.parameters(), net.layer4.parameters(),
+    #        net.layer5.parameters()):
+    #    p.requires_grad = False
+
+    train_dataloader = torch.utils.data.DataLoader(train, batch_size=30,
+            num_workers=20, collate_fn=data.openimagedataset.collate, shuffle=True)
+    test_dataloader = torch.utils.data.DataLoader(test, batch_size=20,
+            num_workers=10, collate_fn=data.openimagedataset.collate)
+
+    opt = torch.optim.SGD(net.parameters(), lr=1e-4, momentum=0.9)
+    criterion = nn.BCELoss()
+
+    for iteration in range(1000):
+        print('Iteration %d\t (Saving...)' % iteration)
+        torch.save(net.state_dict(), 'weights/classifier-food-%d.pt' % iteration)
+
+        total_test_loss = 0
+        net.eval()
+        for y,x in tqdm(test_dataloader, desc='Testing'):
+            if len(x) == 0:
+                continue
+            x = x.to(device)
+            mask = y['mask'].to(device)
+            expected_output = y['output'].to(device)
+
+            y_hat = net(x)
+            loss = criterion(y_hat*mask, expected_output)
+            total_test_loss += loss.item()
+
+        print('Testing Loss: %f' % (total_test_loss/len(test_dataloader)))
+
+        total_loss = 0
+        net.train()
+        for y,x in tqdm(train_dataloader, desc='Training'):
+            if len(x) == 0:
+                continue
+            x = x.to(device)
+            mask = y['mask'].to(device)
+            expected_output = y['output'].to(device)
+
+            opt.zero_grad()
+            y_hat = net(x)
+            loss = criterion(y_hat*mask, expected_output)
+            loss.backward()
+            opt.step()
+            total_loss += loss.item()
+        print('Training Loss: %f' % (total_loss/len(train_dataloader)))
+
+        print('%s & %s & %s' % (iteration, (total_loss/len(train_dataloader)), (total_test_loss/len(test_dataloader))))
+
 temp = None
 def predict(weights_file_name, labels_file_name, img_file_name,
         input_dir, output_dir):
@@ -179,12 +257,24 @@ def convert_to_onnx(weights_file_name, output_file_name):
     torch.onnx.export(net, dummy_input, output_file_name, verbose=True)
 
 if __name__ == "__main__":
-    input_dir = '/NOBACKUP/hhuang63/oid/'
-    output_dir='/NOBACKUP/hhuang63/oid/'
-    #train()
-    weight_dir = os.path.join('weights','classifier-fruit-11.pt')
-    predict(weight_dir,'labels/labels-food.pkl','875806_R.jpg',input_dir=input_dir,output_dir=output_dir)
-    predict(weight_dir,'labels/labels-food.pkl','875806_R.jpg',input_dir=input_dir,output_dir=output_dir)
-    predict(weight_dir,'labels/labels-food.pkl','875806_R.jpg',input_dir=input_dir,output_dir=output_dir)
-    #convert_to_onnx('weights/classifier-fruit-11.pt','onnx/classifier-fruit.onnx')
+    #input_dir = '/NOBACKUP/hhuang63/oid/'
+    #output_dir='/NOBACKUP/hhuang63/oid/'
+    input_dir = '/home/NOBACKUP/hhuang63/oid/'
+    output_dir= '/home/NOBACKUP/hhuang63/oid/'
+    train2(input_dir,output_dir)
+    #lh = LabelsHierarchy(input_dir=input_dir)
+    #lh.load()
+    #cd = ClassDescriptions(input_dir=input_dir)
+    #cd.load()
+    #for k,v in lh.parent.items():
+    #    #print(cd[k],cd[v])
+    #    pass
+    #lh.compute_indices(root=cd['Food'])
+    #print(lh.expand_labels(cd['Banana']))
+    #l = lh.vector_to_labels(np.array(range(lh.vector_length)))
+    #weight_dir = os.path.join('weights','classifier-fruit-11.pt')
+    #predict(weight_dir,'labels/labels-food.pkl','875806_R.jpg',input_dir=input_dir,output_dir=output_dir)
+    #predict(weight_dir,'labels/labels-food.pkl','875806_R.jpg',input_dir=input_dir,output_dir=output_dir)
+    #predict(weight_dir,'labels/labels-food.pkl','875806_R.jpg',input_dir=input_dir,output_dir=output_dir)
+    ##convert_to_onnx('weights/classifier-fruit-11.pt','onnx/classifier-fruit.onnx')
 

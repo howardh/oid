@@ -50,13 +50,7 @@ class OpenImageDataset(torch.utils.data.Dataset):
         log.info('Loading labels tree')
         labels_hierarchy = LabelsHierarchy(input_dir=input_dir,output_dir=output_dir)
         labels_hierarchy.load()
-        labels_tree = labels_hierarchy.tree
-        if label_root is not None:
-            labels_tree = labels_hierarchy[class_descriptions[label_root]]
-        if label_depth == -1:
-            label_mapping = labels_tree.get_map_to_level(None)
-        else:
-            label_mapping = labels_tree.get_map_to_level(label_depth)
+        labels_hierarchy.compute_indices(root=class_descriptions[label_root])
 
         log.info('Loading bounding boxes')
         if self.train:
@@ -71,23 +65,16 @@ class OpenImageDataset(torch.utils.data.Dataset):
 
         log.info('Loading other stuff')
         food_labels = labels_hierarchy[class_descriptions['Food']]
-        label_map = food_labels.get_map_to_level()
         food_boxes = bounding_boxes[food_labels]
 
         # TODO: Map from image id to a list of bounding boxes for that image
         # Name images to include bounding box coordinates. This is unambiguous, and no ordering is required.
 
         dataset = []
-        labels = set()
         for row in tqdm(bounding_boxes[food_labels], desc='Creating Dataset'):
             img_id = row[0]
             # label
             label = row[2]
-            if label in label_mapping:
-                label = label_mapping[label]
-            else:
-                continue # Skip if there's no label mapping available. e.g., if partial paths are ignored when creating the mapping, and some labels are left out.
-            labels.add(label)
             # bounding ox
             xmin = float(row[4])
             xmax = float(row[5])
@@ -111,7 +98,7 @@ class OpenImageDataset(torch.utils.data.Dataset):
                 'resized_file_name': resized_file_name
             })
         self.dataset = dataset
-        self.labels_list = sorted(list(labels))
+        self.labels_hierarchy = labels_hierarchy
 
     def __len__(self):
         return len(self.dataset)
@@ -124,11 +111,7 @@ class OpenImageDataset(torch.utils.data.Dataset):
 
     def merge_labels(self, dataset):
         """ Given another OpenImageDataset, merge the labels from both so that both datasets have the same labels and label ordering. """
-        labels = self.labels_list + dataset.labels_list
-        labels = list(set(labels))
-        labels = sorted(labels)
-        self.labels_list = labels
-        dataset.labels_list = labels
+        self.labels_hierarchy = dataset.labels_hierarchy
 
     def get_num_labels(self):
         return len(self.labels_list)
@@ -136,7 +119,14 @@ class OpenImageDataset(torch.utils.data.Dataset):
     def get_testing_data(self, idx):
         try:
             data = self.dataset[idx]
-            label = torch.Tensor([self.labels_list.index(data['label'])]).long().squeeze()
+            #label = torch.Tensor([self.labels_list.index(data['label'])]).long().squeeze()
+            label = self.labels_hierarchy.expand_labels(data['label'])
+            mask = torch.zeros([len(self.labels_hierarchy)])
+            expected_output = torch.zeros([len(self.labels_hierarchy)])
+            for l in label:
+                expected_output[l['range'][0]+l['index']] = 1
+                mask[l['range'][0]:l['range'][1]] = 1
+
             resized_file_name = data['resized_file_name']
             original_file_name = data['original_file_name']
             url = data['url']
@@ -230,17 +220,24 @@ class OpenImageDataset(torch.utils.data.Dataset):
             if img.size()[0] == 4:
                 print('Alpha channel found, but not processed: %d' % idx)
 
-            return label, img
+            return {'mask': mask, 'output': expected_output}, img
         except Exception as e:
-            print(e)
-            print(idx)
-            print(self.dataset[idx])
+            log.debug(e)
+            log.debug(idx)
+            log.debug(self.dataset[idx])
             return None
 
     def get_augmented_data(self, idx):
         try:
             data = self.dataset[idx]
-            label = torch.Tensor([self.labels_list.index(data['label'])]).long().squeeze()
+            #label = torch.Tensor([self.labels_list.index(data['label'])]).long().squeeze()
+            label = self.labels_hierarchy.expand_labels(data['label'])
+            mask = torch.zeros([len(self.labels_hierarchy)])
+            expected_output = torch.zeros([len(self.labels_hierarchy)])
+            for l in label:
+                expected_output[l['range'][0]+l['index']] = 1
+                mask[l['range'][0]:l['range'][1]] = 1
+
             resized_file_name = data['resized_file_name']
             original_file_name = data['original_file_name']
             url = data['url']
@@ -329,7 +326,7 @@ class OpenImageDataset(torch.utils.data.Dataset):
             # Random crop
             # Random resizing
             # Random occlusion (TODO?)
-            return label, img
+            return {'mask': mask, 'output': expected_output}, img
         except Exception as e:
             log.debug(e)
             log.debug(idx)
@@ -372,6 +369,6 @@ def collate(batch):
     d_c = torch.utils.data.dataloader.default_collate
     batch = list(filter(lambda x:x is not None, batch))
     if len(batch) == 0:
-        return (torch.Tensor([]), torch.Tensor([]))
+        return ({'mask': torch.Tensor([]), 'output': torch.Tensor([])}, torch.Tensor([]))
     return d_c(batch)
 
