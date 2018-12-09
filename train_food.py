@@ -189,17 +189,17 @@ def predict(weights_file_name, labels_file_name, img_file_name,
             print('Unable to load labels-food.pkl. Computing...')
             train = OpenImageDataset(input_dir=input_dir,
                     output_dir=os.path.join(output_dir,'OpenImageDataset'), train=True,
-                    label_depth=2, label_root='Fruit')
+                    label_root='Food')
             test = OpenImageDataset(input_dir=input_dir,
                     output_dir=os.path.join(output_dir,'OpenImageDatasetValidation'),
-                    train=False, label_depth=2, label_root='Fruit')
+                    train=False, label_root='Food')
             train.merge_labels(test)
-            predict.labels = train.labels_list
+            predict.labels = train.labels_hierarchy
             with open(labels_file_name,'wb') as f:
                 dill.dump(predict.labels,f)
 
     if not hasattr(predict,'net'):
-        net = YoloClassifier(labels=predict.labels)
+        net = YoloClassifier(output_size=len(predict.labels))
         net.load_state_dict(torch.load(weights_file_name, map_location=lambda storage, location: storage))
         net.eval()
         predict.net = net
@@ -223,13 +223,9 @@ def predict(weights_file_name, labels_file_name, img_file_name,
     # Feed image to neural net
     output = predict.net(img.view(-1,3,224,224))
     output = output.detach().numpy()[0]
-    temp = output
-    output = sorted(zip(
-        1/(1+np.exp(-output)),
-        [class_descriptions[predict.labels[i]] for i in range(len(output))]
-    ), reverse=True)
-    output = [{'likelihood': float(l), 'class': c} for l,c in output]
+    output = predict.labels.vector_to_labels(output, class_descriptions)
     print(output)
+    temp = output
     return output
 
 def convert_to_onnx(weights_file_name, output_file_name):
@@ -261,7 +257,7 @@ if __name__ == "__main__":
     #output_dir='/NOBACKUP/hhuang63/oid/'
     input_dir = '/home/NOBACKUP/hhuang63/oid/'
     output_dir= '/home/NOBACKUP/hhuang63/oid/'
-    train2(input_dir,output_dir)
+    #train2(input_dir,output_dir)
     #lh = LabelsHierarchy(input_dir=input_dir)
     #lh.load()
     #cd = ClassDescriptions(input_dir=input_dir)
@@ -272,8 +268,8 @@ if __name__ == "__main__":
     #lh.compute_indices(root=cd['Food'])
     #print(lh.expand_labels(cd['Banana']))
     #l = lh.vector_to_labels(np.array(range(lh.vector_length)))
-    #weight_dir = os.path.join('weights','classifier-fruit-11.pt')
-    #predict(weight_dir,'labels/labels-food.pkl','875806_R.jpg',input_dir=input_dir,output_dir=output_dir)
+    weight_dir = os.path.join('weights','classifier-food-5.pt')
+    predict(weight_dir,'labels/labels-food.pkl','875806_R.jpg',input_dir=input_dir,output_dir=output_dir)
     #predict(weight_dir,'labels/labels-food.pkl','875806_R.jpg',input_dir=input_dir,output_dir=output_dir)
     #predict(weight_dir,'labels/labels-food.pkl','875806_R.jpg',input_dir=input_dir,output_dir=output_dir)
     ##convert_to_onnx('weights/classifier-fruit-11.pt','onnx/classifier-fruit.onnx')

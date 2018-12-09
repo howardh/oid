@@ -2,7 +2,7 @@ import os
 import csv
 import json
 import numpy as np
-from collections import defaultdict
+from collections import defaultdict, ChainMap
 
 class LabelTree():
     def __init__(self, key=None, subcategories=[]):
@@ -166,7 +166,7 @@ class LabelsHierarchy(object):
             output += self.expand_labels(p)
         return output
 
-    def vector_to_labels(self, vec):
+    def vector_to_labels(self, vec, label_mapping=None):
         """ Given a vector of values, map each value back to the labels in the
         label tree.
         """
@@ -176,10 +176,13 @@ class LabelsHierarchy(object):
             index = index_range[0]+child_indices[tree.key]
             output = {
                 'value': vec[index],
-                'subcategories': [
+                'subcategories': dict(ChainMap(*[
                     convert(child, tree.key) for child in tree.subcategories
-                ]
+                ]))
             }
-            return {tree.key: output}
+            if label_mapping:
+                return {label_mapping[tree.key]: output}
+            else:
+                return {tree.key: output}
 
         return convert(self.subtrees[self.root], None)
