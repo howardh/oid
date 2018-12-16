@@ -36,12 +36,22 @@ class LabelsHierarchy(object):
         self.tree = None
         self.subtrees = {}
         self.indices = {} # Index range of children of keyed class
-        self.parent = {}
+        self.parents = {}
 
         self.vector_length = None
         self.root = None
 
     def load(self, file_name=None):
+        if file_name is None:
+            file_name = os.path.join(self.input_dir, 'bbox_labels_600_hierarchy.json')
+        self.load_from_file(file_name)
+
+    def load_from_file(self, file_name):
+        with open(file_name) as f:
+            data = json.load(f)
+        self.load_from_json(data)
+
+    def load_from_json(self, data):
         """
             Parse json data into a dictionary.
             data = {
@@ -49,10 +59,6 @@ class LabelsHierarchy(object):
                 Subcategory: [data]
             }
         """
-        if file_name is None:
-            file_name = os.path.join(self.input_dir, 'bbox_labels_600_hierarchy.json')
-        with open(file_name) as f:
-            data = json.load(f)
         self.tree = self.parse_json_tree(data)
         self.subtrees = self.extract_all_subtrees(self.tree)
         self.parents = self.extract_parent_relations(self.tree)
@@ -161,7 +167,7 @@ class LabelsHierarchy(object):
             output.append({
                     'label': label,
                     'range': index_range,
-                    'index': children_indices[label]+index_range[0]
+                    'index': children_indices[label]
             })
             output += self.expand_labels(p)
         return output
@@ -186,3 +192,12 @@ class LabelsHierarchy(object):
                 return {tree.key: output}
 
         return convert(self.subtrees[self.root], None)
+
+    def label_to_vector(self, label):
+        label = self.expand_labels(label)
+        mask = np.zeros(len(self))
+        expected_output = np.zeros(len(self))
+        for l in label:
+            expected_output[l['range'][0]+l['index']] = 1
+            mask[l['range'][0]:l['range'][1]] = 1
+        return mask, expected_output

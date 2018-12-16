@@ -96,7 +96,9 @@ def train():
 
         print('%s & %s & %s' % (iteration, (total_loss/len(train_dataloader)), (total_test_loss/len(test_dataloader))))
 
+latex_table=''
 def train2(input_dir, output_dir):
+    global latex_table
     device = torch.device('cuda')
     #device = torch.device('cpu')
 
@@ -112,7 +114,7 @@ def train2(input_dir, output_dir):
     with open('labels-food.pkl','wb') as f:
         dill.dump(train.labels_hierarchy,f)
 
-    weights_file_name = 'weights/classifier-leaf-28.pt'
+    #weights_file_name = 'weights/classifier-leaf-28.pt'
     net = YoloClassifier(output_size=num_labels)
     #state_dict = net.state_dict()
     #trained_state_dict = torch.load(weights_file_name)
@@ -120,7 +122,6 @@ def train2(input_dir, output_dir):
     #trained_state_dict['linear.weight'] = state_dict['linear.weight']
     #net.load_state_dict(trained_state_dict)
     net = net.to(device)
-    net.train()
 
     ## Freeze all layers but the last
     #for p in itertools.chain(net.layer1.parameters(), net.layer2.parameters(),
@@ -133,7 +134,7 @@ def train2(input_dir, output_dir):
     test_dataloader = torch.utils.data.DataLoader(test, batch_size=20,
             num_workers=10, collate_fn=data.openimagedataset.collate)
 
-    opt = torch.optim.SGD(net.parameters(), lr=1e-4, momentum=0.9)
+    opt = torch.optim.SGD(net.parameters(), lr=1e-3, momentum=0.9)
     criterion = nn.BCELoss()
 
     for iteration in range(1000):
@@ -172,7 +173,7 @@ def train2(input_dir, output_dir):
             total_loss += loss.item()
         print('Training Loss: %f' % (total_loss/len(train_dataloader)))
 
-        print('%s & %s & %s' % (iteration, (total_loss/len(train_dataloader)), (total_test_loss/len(test_dataloader))))
+        latex_table += '%s & %s & %s \\\\\n' % (iteration, (total_loss/len(train_dataloader)), (total_test_loss/len(test_dataloader)))
 
 temp = None
 def predict(weights_file_name, labels_file_name, img_file_name,
@@ -253,11 +254,14 @@ def convert_to_onnx(weights_file_name, output_file_name):
     torch.onnx.export(net, dummy_input, output_file_name, verbose=True)
 
 if __name__ == "__main__":
-    #input_dir = '/NOBACKUP/hhuang63/oid/'
-    #output_dir='/NOBACKUP/hhuang63/oid/'
-    input_dir = '/home/NOBACKUP/hhuang63/oid/'
-    output_dir= '/home/NOBACKUP/hhuang63/oid/'
-    #train2(input_dir,output_dir)
+    hostname = os.uname()[1]
+    if hostname.startswith('agent-server-2'):
+        input_dir = '/NOBACKUP/hhuang63/oid/'
+        output_dir='/NOBACKUP/hhuang63/oid/'
+    elif hostname == 'garden-path':
+        input_dir = '/home/NOBACKUP/hhuang63/oid/'
+        output_dir= '/home/NOBACKUP/hhuang63/oid/'
+    train2(input_dir,output_dir)
     #lh = LabelsHierarchy(input_dir=input_dir)
     #lh.load()
     #cd = ClassDescriptions(input_dir=input_dir)
@@ -265,10 +269,14 @@ if __name__ == "__main__":
     #for k,v in lh.parent.items():
     #    #print(cd[k],cd[v])
     #    pass
-    #lh.compute_indices(root=cd['Food'])
-    #print(lh.expand_labels(cd['Banana']))
-    #l = lh.vector_to_labels(np.array(range(lh.vector_length)))
-    weight_dir = os.path.join('weights','classifier-food-5.pt')
+    #lh.compute_indices(root=cd['Fruit'])
+    #v = lh.label_to_vector(cd['Banana'])
+    #print(v)
+    #l = lh.vector_to_labels(v[1], cd)
+    #print(l)
+    #temp = l
+    #print(sorted(temp['Food']['subcategories'].items(),key=lambda x: x[1]['value'], reverse=True)[19])
+    weight_dir = os.path.join('weights','classifier-food-122.pt')
     predict(weight_dir,'labels/labels-food.pkl','875806_R.jpg',input_dir=input_dir,output_dir=output_dir)
     #predict(weight_dir,'labels/labels-food.pkl','875806_R.jpg',input_dir=input_dir,output_dir=output_dir)
     #predict(weight_dir,'labels/labels-food.pkl','875806_R.jpg',input_dir=input_dir,output_dir=output_dir)

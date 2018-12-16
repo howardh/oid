@@ -119,13 +119,9 @@ class OpenImageDataset(torch.utils.data.Dataset):
     def get_testing_data(self, idx):
         try:
             data = self.dataset[idx]
-            #label = torch.Tensor([self.labels_list.index(data['label'])]).long().squeeze()
-            label = self.labels_hierarchy.expand_labels(data['label'])
-            mask = torch.zeros([len(self.labels_hierarchy)])
-            expected_output = torch.zeros([len(self.labels_hierarchy)])
-            for l in label:
-                expected_output[l['range'][0]+l['index']] = 1
-                mask[l['range'][0]:l['range'][1]] = 1
+            mask, expected_output = self.labels_hierarchy.label_to_vector(data['label'])
+            mask = torch.Tensor(mask)
+            expected_output = torch.Tensor(expected_output)
 
             resized_file_name = data['resized_file_name']
             original_file_name = data['original_file_name']
@@ -231,12 +227,9 @@ class OpenImageDataset(torch.utils.data.Dataset):
         try:
             data = self.dataset[idx]
             #label = torch.Tensor([self.labels_list.index(data['label'])]).long().squeeze()
-            label = self.labels_hierarchy.expand_labels(data['label'])
-            mask = torch.zeros([len(self.labels_hierarchy)])
-            expected_output = torch.zeros([len(self.labels_hierarchy)])
-            for l in label:
-                expected_output[l['range'][0]+l['index']] = 1
-                mask[l['range'][0]:l['range'][1]] = 1
+            mask, expected_output = self.labels_hierarchy.label_to_vector(data['label'])
+            mask = torch.Tensor(mask)
+            expected_output = torch.Tensor(expected_output)
 
             resized_file_name = data['resized_file_name']
             original_file_name = data['original_file_name']
