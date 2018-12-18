@@ -261,7 +261,7 @@ if __name__ == "__main__":
     elif hostname == 'garden-path':
         input_dir = '/home/NOBACKUP/hhuang63/oid/'
         output_dir= '/home/NOBACKUP/hhuang63/oid/'
-    train2(input_dir,output_dir)
+    #train2(input_dir,output_dir)
     #lh = LabelsHierarchy(input_dir=input_dir)
     #lh.load()
     #cd = ClassDescriptions(input_dir=input_dir)
@@ -276,7 +276,7 @@ if __name__ == "__main__":
     #print(l)
     #temp = l
     #print(sorted(temp['Food']['subcategories'].items(),key=lambda x: x[1]['value'], reverse=True)[19])
-    weight_dir = os.path.join('weights','classifier-food-122.pt')
+    weight_dir = os.path.join('weights','classifier-food-74.pt')
     predict(weight_dir,'labels/labels-food.pkl','875806_R.jpg',input_dir=input_dir,output_dir=output_dir)
     #predict(weight_dir,'labels/labels-food.pkl','875806_R.jpg',input_dir=input_dir,output_dir=output_dir)
     #predict(weight_dir,'labels/labels-food.pkl','875806_R.jpg',input_dir=input_dir,output_dir=output_dir)

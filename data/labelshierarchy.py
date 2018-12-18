@@ -180,12 +180,14 @@ class LabelsHierarchy(object):
             index_range = self.indices[parent][:2]
             child_indices = self.indices[parent][2]
             index = index_range[0]+child_indices[tree.key]
+            subcategories = dict(ChainMap(*[
+                convert(child, tree.key) for child in tree.subcategories
+            ]))
             output = {
                 'value': vec[index],
-                'subcategories': dict(ChainMap(*[
-                    convert(child, tree.key) for child in tree.subcategories
-                ]))
             }
+            if len(subcategories) > 0:
+                output['subcategories'] = subcategories
             if label_mapping:
                 return {label_mapping[tree.key]: output}
             else:
