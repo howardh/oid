@@ -11,17 +11,17 @@ from flask import request
 
 import train_food
 
-hostname = os.uname()[0]
+hostname = os.uname()[1]
 if hostname.startswith('ip-'):
     input_dir = '/home/ubuntu/data/'
     output_dir = '/home/ubuntu/data/'
-    weights_file = os.path.join('/home/ubuntu/data/weights','classifier-fruit-11.pt')
-    labels_file = os.path.join('labels', 'labels-food.pkl')
+    weights_file = os.path.join('/home/ubuntu/data/weights','classifier-food-75.pt')
+    labels_file = os.path.join(output_dir, 'labels', 'labels-food.pkl')
     example_photo_file = '875806_R.jpg'
 else:
     input_dir = '/NOBACKUP/hhuang63/oid/'
     output_dir = '/NOBACKUP/hhuang63/oid/'
-    weights_file = os.path.join('weights','classifier-fruit-11.pt')
+    weights_file = os.path.join('weights','classifier-food-75.pt')
     labels_file = os.path.join('labels', 'labels-food.pkl')
     example_photo_file = '875806_R.jpg'
 

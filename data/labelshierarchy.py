@@ -184,7 +184,7 @@ class LabelsHierarchy(object):
                 convert(child, tree.key) for child in tree.subcategories
             ]))
             output = {
-                'value': vec[index],
+                'value': float(vec[index]),
             }
             if len(subcategories) > 0:
                 output['subcategories'] = subcategories
